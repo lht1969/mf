@@ -1,0 +1,710 @@
+use std::path::Path;
+
+use crate::error::MfError;
+
+/// 检测结果包含内容类型和置信度评分
+#[derive(Debug, Clone)]
+struct DetectionResult {
+    content_type: ContentType,
+    confidence: f64,      // 置信度: 0.0 - 1.0
+    signals: Vec<String>, // 匹配到的信号列表（用于调试）
+}
+
+impl DetectionResult {
+    /// 创建新的检测结果
+    fn new(content_type: ContentType, confidence: f64, signals: Vec<&str>) -> Self {
+        DetectionResult {
+            content_type,
+            confidence,
+            signals: signals.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentType {
+    Json,
+    Xml,
+    Html,
+    Python,
+    JavaScript,
+    TypeScript,
+    Sql,
+    Shell,
+    Batch,
+    PowerShell,
+    Ruby,
+    Php,
+    C,
+    Cpp,
+    Rust,
+    Go,
+    Java,
+    CSharp,
+    Yaml,
+    Toml,
+    Csv,
+    Markdown,
+    PlainText,
+    Binary,
+}
+
+impl ContentType {
+    pub fn suggested_extensions(&self) -> Vec<&'static str> {
+        match self {
+            ContentType::Json => vec!["json"],
+            ContentType::Xml => vec!["xml", "html", "svg"],
+            ContentType::Html => vec!["html", "htm"],
+            ContentType::Python => vec!["py"],
+            ContentType::JavaScript => vec!["js", "mjs", "cjs"],
+            ContentType::TypeScript => vec!["ts"],
+            ContentType::Sql => vec!["sql"],
+            ContentType::Shell => vec!["sh", "bash"],
+            ContentType::Batch => vec!["bat", "cmd"],
+            ContentType::PowerShell => vec!["ps1"],
+            ContentType::Ruby => vec!["rb"],
+            ContentType::Php => vec!["php"],
+            ContentType::C => vec!["c", "h"],
+            ContentType::Cpp => vec!["cpp", "hpp", "cc", "cxx"],
+            ContentType::Rust => vec!["rs"],
+            ContentType::Go => vec!["go"],
+            ContentType::Java => vec!["java"],
+            ContentType::CSharp => vec!["cs"],
+            ContentType::Yaml => vec!["yaml", "yml"],
+            ContentType::Toml => vec!["toml"],
+            ContentType::Csv => vec!["csv"],
+            ContentType::Markdown => vec!["md", "markdown"],
+            ContentType::PlainText => vec!["txt", "md"],
+            ContentType::Binary => vec![],
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ContentType::Json => "JSON",
+            ContentType::Xml => "XML",
+            ContentType::Html => "HTML",
+            ContentType::Python => "Python",
+            ContentType::JavaScript => "JavaScript",
+            ContentType::TypeScript => "TypeScript",
+            ContentType::Sql => "SQL",
+            ContentType::Shell => "Shell",
+            ContentType::Batch => "Batch",
+            ContentType::PowerShell => "PowerShell",
+            ContentType::Ruby => "Ruby",
+            ContentType::Php => "PHP",
+            ContentType::C => "C",
+            ContentType::Cpp => "C++",
+            ContentType::Rust => "Rust",
+            ContentType::Go => "Go",
+            ContentType::Java => "Java",
+            ContentType::CSharp => "C#",
+            ContentType::Yaml => "YAML",
+            ContentType::Toml => "TOML",
+            ContentType::Csv => "CSV",
+            ContentType::Markdown => "Markdown",
+            ContentType::PlainText => "Plain Text",
+            ContentType::Binary => "Binary",
+        }
+    }
+}
+
+fn shebang_to_content_type(shebang: &str) -> Option<ContentType> {
+    let lower = shebang.to_lowercase();
+    if lower.contains("python") {
+        return Some(ContentType::Python);
+    }
+    if lower.contains("node") || lower.contains("deno") || lower.contains("bun") {
+        return Some(ContentType::JavaScript);
+    }
+    if lower.contains("bash") || lower.contains("sh") || lower.contains("zsh") || lower.contains("dash") {
+        return Some(ContentType::Shell);
+    }
+    if lower.contains("ruby") {
+        return Some(ContentType::Ruby);
+    }
+    if lower.contains("php") {
+        return Some(ContentType::Php);
+    }
+    if lower.contains("perl") {
+        return Some(ContentType::PlainText);
+    }
+    if lower.contains("lua") {
+        return Some(ContentType::PlainText);
+    }
+    None
+}
+
+pub fn detect(content: &str) -> ContentType {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return ContentType::PlainText;
+    }
+
+    if content.contains('\0') {
+        return ContentType::Binary;
+    }
+
+    // Check shebang
+    if let Some(first_line) = content.lines().next() {
+        let fl = first_line.trim();
+        if fl.starts_with("#!") {
+            if let Some(ct) = shebang_to_content_type(fl) {
+                return ct;
+            }
+        }
+    }
+
+    // JSON detection
+    let first_char = trimmed.chars().next().unwrap();
+    if (first_char == '{' || first_char == '[')
+        && serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
+    {
+        return ContentType::Json;
+    }
+
+    // XML / HTML detection
+    if first_char == '<'
+        && (trimmed.contains("</") || trimmed.ends_with("/>"))
+    {
+        if trimmed.contains("<html") || trimmed.contains("<!DOCTYPE html") || trimmed.contains("<head") {
+            return ContentType::Html;
+        }
+        return ContentType::Xml;
+    }
+
+    // YAML detection
+    if trimmed.starts_with("---\n") || trimmed.starts_with("---\r\n") {
+        return ContentType::Yaml;
+    }
+
+    // TOML detection
+    if trimmed.starts_with("[") && !first_char.eq(&'{') {
+        let has_keyval = trimmed.contains('=');
+        let has_section = trimmed.contains('[') && trimmed.contains(']');
+        if has_keyval && has_section {
+            return ContentType::Toml;
+        }
+    }
+
+    // CSV detection (simple: multiple lines with same number of commas)
+    if content.contains(',') {
+        let lines: Vec<&str> = content.lines().collect();
+        if lines.len() >= 2 {
+            let first_comma_count = lines[0].matches(',').count();
+            if first_comma_count > 0 && lines[1..].iter().all(|l| l.matches(',').count() == first_comma_count) {
+                return ContentType::Csv;
+            }
+        }
+    }
+
+    // Rust detection (before generic keyword matches)
+    if content.contains("fn ") && (content.contains("->") || content.contains("let mut "))
+        || content.contains("use ") && content.contains("::")
+        || content.contains("impl ")
+    {
+        return ContentType::Rust;
+    }
+
+    // Go detection
+    if content.contains("func ") || content.contains("package ") || content.contains("import (") {
+        return ContentType::Go;
+    }
+
+    // Java detection (before Python's class keyword)
+    if (content.contains("public static void") || content.contains("public class"))
+        && content.contains("String[] args")
+    {
+        return ContentType::Java;
+    }
+
+    // C# detection (uses `class` keyword but more specific patterns)
+    if (content.contains("using System") || content.contains("namespace "))
+        && content.contains("class ")
+        && content.contains("static void Main")
+    {
+        return ContentType::CSharp;
+    }
+
+    // C/C++ detection (before Python's class keyword)
+    if content.contains("int main(") || content.contains("#include <")
+        || (content.contains("void ") && (content.contains("printf") || content.contains("scanf")))
+    {
+        return ContentType::C;
+    }
+    if (content.contains("std::") || content.contains("template "))
+        || (content.contains("class ") && (content.contains("public:") || content.contains("private:")))
+    {
+        return ContentType::Cpp;
+    }
+
+    // Python detection (before JS/TS; class requires Python colon syntax)
+    if content.contains("def ")
+        || content.contains("import ")
+        || content.contains("if __name__")
+        || content.contains("elif ")
+        || content.contains("except ")
+        || content.contains("class ") && content.contains(":")
+    {
+        return ContentType::Python;
+    }
+
+    // TypeScript detection (before JavaScript since TS extends JS)
+    if content.contains("interface ") || content.contains(": string") || content.contains(": number")
+        || content.contains(": boolean") || content.contains(": any")
+        || content.contains("type ") && content.contains('=')
+    {
+        return ContentType::TypeScript;
+    }
+
+    // JavaScript detection
+    if content.contains("function ")
+        || content.contains("const ")
+        || content.contains("let ")
+        || content.contains("var ")
+        || content.contains("=>")
+        || content.contains("console.")
+        || content.contains("document.")
+    {
+        return ContentType::JavaScript;
+    }
+
+    // SQL detection
+    for line in content.lines() {
+        let trimmed = line.trim().to_uppercase();
+        if trimmed.starts_with("SELECT ")
+            || trimmed.starts_with("INSERT ")
+            || trimmed.starts_with("UPDATE ")
+            || trimmed.starts_with("CREATE ")
+            || trimmed.starts_with("ALTER ")
+            || trimmed.starts_with("DROP ")
+            || trimmed.starts_with("DELETE ")
+        {
+            return ContentType::Sql;
+        }
+    }
+
+    // Batch detection (Windows CMD)
+    if content.contains("@echo") || content.contains("echo off")
+        || content.contains("%errorlevel%") || content.contains("goto ")
+    {
+        return ContentType::Batch;
+    }
+
+    // PowerShell detection (before Markdown — `# ` is for comments, not headings)
+    if content.contains("Write-Host") || content.contains("Write-Output")
+        || content.contains("$_") || content.contains("| %")
+        || content.starts_with("#requires") || content.contains("-Parameter")
+        || content.contains("param(") || content.contains("End of Script")
+        || content.contains("function ") && content.contains("{")
+        || content.contains("[CmdletBinding") || content.contains("[Parameter(")
+        || content.contains("$env:") || content.contains("$PSScriptRoot")
+        || content.contains("$PSVersionTable") || content.contains("$ErrorActionPreference")
+        || content.contains("Get-") || content.contains("Set-")
+        || content.contains("New-") || content.contains("Remove-")
+        || content.contains("Out-") || content.contains("Write-")
+        || content.contains("Read-") || content.contains("Import-")
+        || content.contains("Export-") || content.contains("Start-")
+        || content.contains("Stop-") || content.contains("Restart-")
+        || content.contains("Invoke-") || content.contains("Add-")
+        || content.contains("Format-") || content.contains("Where-Object")
+        || content.contains("Select-Object") || content.contains("ForEach-Object")
+        || content.contains("ConvertTo-") || content.contains("ConvertFrom-")
+        || content.contains("-Force") || content.contains("-ErrorAction")
+        || content.contains("-WarningAction") || content.contains("-InformationAction")
+    {
+        return ContentType::PowerShell;
+    }
+
+    // Markdown detection — require at least 2 signals to reduce false positives
+    // from `# ` comments in PowerShell, shell, Python, etc.
+    let md_heading = trimmed.starts_with("# ") || trimmed.starts_with("## ");
+    let md_link = trimmed.contains("[") && trimmed.contains("](");
+    let md_fence = content.contains("```");
+    let md_bold = content.contains("**") || content.contains("__");
+    let md_hr = content.contains("---") || content.contains("***");
+    let md_list = content.lines().any(|l| l.trim().starts_with("- ") || l.trim().starts_with("* "));
+
+    let total_lines = content.lines().count();
+    let md_heading_count = content.lines().filter(|l| {
+        let t = l.trim();
+        t.starts_with("# ") || t.starts_with("## ") || t.starts_with("### ")
+            || t.starts_with("#### ") || t.starts_with("##### ") || t.starts_with("###### ")
+    }).count();
+
+    if md_fence || md_link
+        || (md_heading && (md_bold || md_hr || md_list || md_fence || md_link))
+        || md_heading_count >= 2
+        || (md_heading && total_lines <= 5)
+    {
+        return ContentType::Markdown;
+    }
+
+    ContentType::PlainText
+}
+
+pub fn check_match(content_type: &ContentType, filename: &Path) -> Result<(), MfError> {
+    let ext = filename.extension().and_then(|e| e.to_str());
+    let ext = match ext {
+        Some(e) => e,
+        None => return Ok(()),
+    };
+
+    let suggested = content_type.suggested_extensions();
+    if suggested.contains(&ext) {
+        return Ok(());
+    }
+
+    if *content_type == ContentType::Binary {
+        return Err(MfError::InvalidArgument(
+            "检测到二进制数据，无法处理".to_string(),
+        ));
+    }
+
+    let alternatives = if suggested.is_empty() {
+        String::new()
+    } else {
+        suggested.join(", ")
+    };
+
+    Err(MfError::InvalidArgument(format!(
+        "文件扩展名 '.{}' 与检测到的内容类型不匹配。建议扩展名: {}",
+        ext, alternatives
+    )))
+}
+
+/// Return the best suggested extension for the detected content type.
+pub fn suggest_extension(content_type: &ContentType) -> Option<&'static str> {
+    content_type.suggested_extensions().first().copied()
+}
+
+/// Enhanced content type detection using file-identify for shebang and binary analysis.
+/// Writes content to a temp file with a generic name (avoiding extension bias),
+/// runs file-identify, and cross-checks tags with heuristic content detection.
+/// Falls back to regular `detect()` if file-identify is unavailable or ambiguous.
+pub fn detect_enhanced(content: &str, _filename: Option<&Path>) -> ContentType {
+    // Write to temp file for file-identify analysis.
+    // Use a GENERIC filename to avoid extension bias — file-identify's extension
+    // mapping would override actual content (e.g. Python code saved to .rs would
+    // be tagged as Rust). Only shebang and binary detection from content matter.
+    let tmp_dir = std::env::temp_dir().join("mf-detect");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+
+    let tmp_path = tmp_dir.join("clipboard.txt");
+    let _ = std::fs::write(&tmp_path, content);
+
+    let tags = file_identify::tags_from_path(&tmp_path).unwrap_or_default();
+
+    let _ = std::fs::remove_file(&tmp_path);
+
+    let tag_set: Vec<&str> = tags.iter().map(|t| t.as_ref()).collect();
+
+    // Binary detection from content — file-identify is authoritative here
+    if tag_set.contains(&"binary") {
+        return ContentType::Binary;
+    }
+
+    // Shebang-based detection from content — file-identify knows many interpreters
+    // that we don't manually handle (perl, lua, awk, sed, etc.)
+    let heuristic = detect(content);
+
+    // For all language/format tags, only accept if file-identify agrees with
+    // heuristic content analysis. This prevents extension-based false positives.
+    if tag_set.contains(&"python") && heuristic == ContentType::Python {
+        return ContentType::Python;
+    }
+    if tag_set.contains(&"javascript") && heuristic == ContentType::JavaScript {
+        return ContentType::JavaScript;
+    }
+    if tag_set.contains(&"typescript") && heuristic == ContentType::TypeScript {
+        return ContentType::TypeScript;
+    }
+    if tag_set.contains(&"ruby") && heuristic == ContentType::Ruby {
+        return ContentType::Ruby;
+    }
+    if tag_set.contains(&"php") && heuristic == ContentType::Php {
+        return ContentType::Php;
+    }
+    if tag_set.contains(&"shell") && heuristic == ContentType::Shell {
+        return ContentType::Shell;
+    }
+    if (tag_set.contains(&"bash") || tag_set.contains(&"zsh")) && heuristic == ContentType::Shell {
+        return ContentType::Shell;
+    }
+    if tag_set.contains(&"json") && heuristic == ContentType::Json {
+        return ContentType::Json;
+    }
+    if tag_set.contains(&"xml") && heuristic == ContentType::Xml {
+        return ContentType::Xml;
+    }
+    if tag_set.contains(&"html") && heuristic == ContentType::Html {
+        return ContentType::Html;
+    }
+    if tag_set.contains(&"yaml") && heuristic == ContentType::Yaml {
+        return ContentType::Yaml;
+    }
+    if tag_set.contains(&"toml") && heuristic == ContentType::Toml {
+        return ContentType::Toml;
+    }
+    if tag_set.contains(&"markdown") && heuristic == ContentType::Markdown {
+        return ContentType::Markdown;
+    }
+    if tag_set.contains(&"csv") && heuristic == ContentType::Csv {
+        return ContentType::Csv;
+    }
+    if tag_set.contains(&"sql") && heuristic == ContentType::Sql {
+        return ContentType::Sql;
+    }
+
+    heuristic
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn test_detect_empty() {
+        assert_eq!(detect(""), ContentType::PlainText);
+        assert_eq!(detect("   "), ContentType::PlainText);
+    }
+
+    #[test]
+    fn test_detect_json_object() {
+        assert_eq!(detect(r#"{"key": "value"}"#), ContentType::Json);
+    }
+
+    #[test]
+    fn test_detect_json_array() {
+        assert_eq!(detect("[1,2,3]"), ContentType::Json);
+    }
+
+    #[test]
+    fn test_detect_xml() {
+        assert_eq!(detect("<root>text</root>"), ContentType::Xml);
+    }
+
+    #[test]
+    fn test_detect_html() {
+        assert_eq!(detect("<html><body></body></html>"), ContentType::Html);
+        assert_eq!(detect("<!DOCTYPE html><html></html>"), ContentType::Html);
+    }
+
+    #[test]
+    fn test_detect_python() {
+        assert_eq!(detect("def main():\n    pass"), ContentType::Python);
+        assert_eq!(detect("import os"), ContentType::Python);
+    }
+
+    #[test]
+    fn test_detect_python_shebang() {
+        assert_eq!(detect("#!/usr/bin/env python3\nprint('hi')"), ContentType::Python);
+        assert_eq!(detect("#!/usr/bin/python\nprint('hi')"), ContentType::Python);
+    }
+
+    #[test]
+    fn test_detect_javascript() {
+        assert_eq!(detect("function foo() {}"), ContentType::JavaScript);
+        assert_eq!(detect("const x = 1;"), ContentType::JavaScript);
+    }
+
+    #[test]
+    fn test_detect_node_shebang() {
+        assert_eq!(detect("#!/usr/bin/env node\nconsole.log('hi')"), ContentType::JavaScript);
+    }
+
+    #[test]
+    fn test_detect_typescript() {
+        assert_eq!(detect("const x: string = 'hello'"), ContentType::TypeScript);
+        assert_eq!(detect("interface Foo { bar: string }"), ContentType::TypeScript);
+    }
+
+    #[test]
+    fn test_detect_shell_shebang() {
+        assert_eq!(detect("#!/bin/bash\necho hi"), ContentType::Shell);
+        assert_eq!(detect("#!/usr/bin/env sh\necho hi"), ContentType::Shell);
+    }
+
+    #[test]
+    fn test_detect_batch() {
+        assert_eq!(detect("@echo off\necho hi"), ContentType::Batch);
+    }
+
+    #[test]
+    fn test_detect_powershell() {
+        assert_eq!(detect("Write-Host 'hello'"), ContentType::PowerShell);
+    }
+
+    #[test]
+    fn test_detect_ruby_shebang() {
+        assert_eq!(detect("#!/usr/bin/env ruby\nputs 'hi'"), ContentType::Ruby);
+    }
+
+    #[test]
+    fn test_detect_php_shebang() {
+        assert_eq!(detect("#!/usr/bin/env php\n<?php echo 'hi';"), ContentType::Php);
+    }
+
+    #[test]
+    fn test_detect_sql() {
+        assert_eq!(detect("SELECT * FROM users"), ContentType::Sql);
+        assert_eq!(detect("INSERT INTO t"), ContentType::Sql);
+    }
+
+    #[test]
+    fn test_detect_yaml() {
+        assert_eq!(detect("---\nkey: value\nfoo: bar"), ContentType::Yaml);
+    }
+
+    #[test]
+    fn test_detect_toml() {
+        assert_eq!(detect("[package]\nname = \"hello\""), ContentType::Toml);
+    }
+
+    #[test]
+    fn test_detect_markdown() {
+        assert_eq!(detect("# Hello\nworld"), ContentType::Markdown);
+        assert_eq!(detect("Hello [link](url)"), ContentType::Markdown);
+    }
+
+    #[test]
+    fn test_detect_csv() {
+        assert_eq!(detect("a,b,c\n1,2,3\n4,5,6"), ContentType::Csv);
+    }
+
+    #[test]
+    fn test_detect_rust() {
+        assert_eq!(detect("fn main() -> i32 {\n    42\n}"), ContentType::Rust);
+        assert_eq!(detect("use std::io;\nfn main() {}"), ContentType::Rust);
+    }
+
+    #[test]
+    fn test_detect_go() {
+        assert_eq!(detect("package main\nfunc main() {}"), ContentType::Go);
+    }
+
+    #[test]
+    fn test_detect_java() {
+        assert_eq!(detect("public static void main(String[] args)"), ContentType::Java);
+    }
+
+    #[test]
+    fn test_detect_csharp() {
+        assert_eq!(detect("using System;\nclass Program { static void Main() {} }"), ContentType::CSharp);
+    }
+
+    #[test]
+    fn test_detect_binary() {
+        assert_eq!(detect("abc\0def"), ContentType::Binary);
+    }
+
+    #[test]
+    fn test_detect_plain_text() {
+        assert_eq!(detect("Hello world"), ContentType::PlainText);
+    }
+
+    #[test]
+    fn test_check_match_ok() {
+        let result = check_match(&ContentType::Json, Path::new("data.json"));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_mismatch() {
+        let result = check_match(&ContentType::Python, Path::new("script.js"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_no_ext() {
+        let result = check_match(&ContentType::Json, Path::new("Makefile"));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_suggested_extensions() {
+        assert_eq!(ContentType::Json.suggested_extensions(), vec!["json"]);
+        assert_eq!(ContentType::Xml.suggested_extensions(), vec!["xml", "html", "svg"]);
+        assert_eq!(ContentType::Python.suggested_extensions(), vec!["py"]);
+        assert_eq!(ContentType::JavaScript.suggested_extensions(), vec!["js", "mjs", "cjs"]);
+        assert_eq!(ContentType::TypeScript.suggested_extensions(), vec!["ts"]);
+        assert_eq!(ContentType::Sql.suggested_extensions(), vec!["sql"]);
+        assert_eq!(ContentType::Shell.suggested_extensions(), vec!["sh", "bash"]);
+        assert_eq!(ContentType::Batch.suggested_extensions(), vec!["bat", "cmd"]);
+        assert_eq!(ContentType::PowerShell.suggested_extensions(), vec!["ps1"]);
+        assert_eq!(ContentType::Ruby.suggested_extensions(), vec!["rb"]);
+        assert_eq!(ContentType::Php.suggested_extensions(), vec!["php"]);
+        assert_eq!(ContentType::C.suggested_extensions(), vec!["c", "h"]);
+        assert_eq!(ContentType::Cpp.suggested_extensions(), vec!["cpp", "hpp", "cc", "cxx"]);
+        assert_eq!(ContentType::Rust.suggested_extensions(), vec!["rs"]);
+        assert_eq!(ContentType::Go.suggested_extensions(), vec!["go"]);
+        assert_eq!(ContentType::Java.suggested_extensions(), vec!["java"]);
+        assert_eq!(ContentType::CSharp.suggested_extensions(), vec!["cs"]);
+        assert_eq!(ContentType::Yaml.suggested_extensions(), vec!["yaml", "yml"]);
+        assert_eq!(ContentType::Toml.suggested_extensions(), vec!["toml"]);
+        assert_eq!(ContentType::Csv.suggested_extensions(), vec!["csv"]);
+        assert_eq!(ContentType::Markdown.suggested_extensions(), vec!["md", "markdown"]);
+        assert_eq!(ContentType::PlainText.suggested_extensions(), vec!["txt", "md"]);
+        assert!(ContentType::Binary.suggested_extensions().is_empty());
+    }
+
+    #[test]
+    fn test_content_type_names() {
+        assert_eq!(ContentType::Json.name(), "JSON");
+        assert_eq!(ContentType::Html.name(), "HTML");
+        assert_eq!(ContentType::Python.name(), "Python");
+        assert_eq!(ContentType::PlainText.name(), "Plain Text");
+        assert_eq!(ContentType::Binary.name(), "Binary");
+        assert_eq!(ContentType::TypeScript.name(), "TypeScript");
+    }
+
+    #[test]
+    fn test_detect_xml_without_close() {
+        assert_eq!(detect("<input type=\"text\">"), ContentType::PlainText);
+    }
+
+    #[test]
+    fn test_detect_mixed_python_then_js() {
+        let mixed = "def foo():\n    const x = 1";
+        assert_eq!(detect(mixed), ContentType::Python);
+    }
+
+    #[test]
+    fn test_detect_sql_keyword_in_plain_text() {
+        assert_eq!(detect("Please select an option"), ContentType::PlainText);
+    }
+
+    #[test]
+    fn test_detect_case_insensitive_sql() {
+        assert_eq!(detect("select * from users"), ContentType::Sql);
+    }
+
+    #[test]
+    fn test_check_match_xml_variants() {
+        let ct = ContentType::Xml;
+        assert!(check_match(&ct, Path::new("doc.xml")).is_ok());
+        assert!(check_match(&ct, Path::new("page.html")).is_ok());
+        assert!(check_match(&ct, Path::new("image.svg")).is_ok());
+        assert!(check_match(&ct, Path::new("data.txt")).is_err());
+    }
+
+    #[test]
+    fn test_suggest_extension() {
+        assert_eq!(suggest_extension(&ContentType::Python), Some("py"));
+        assert_eq!(suggest_extension(&ContentType::Json), Some("json"));
+        assert_eq!(suggest_extension(&ContentType::JavaScript), Some("js"));
+        assert_eq!(suggest_extension(&ContentType::Binary), None);
+    }
+
+    #[test]
+    fn test_detect_non_csv_single_line() {
+        assert_eq!(detect("a,b,c"), ContentType::PlainText);
+    }
+
+    #[test]
+    fn test_detect_csv_uneven_columns() {
+        assert_eq!(detect("a,b,c\n1,2\n3,4,5,6"), ContentType::PlainText);
+    }
+}

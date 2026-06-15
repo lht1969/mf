@@ -1,0 +1,50 @@
+[package]
+name = "mf"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Make File - a cross-platform CLI tool for creating files with clipboard, encoding detection, and content type support"
+homepage = "https://github.com/lucasheld/mf"
+repository = "https://github.com/lucasheld/mf"
+license = "MIT"
+readme = "README.md"
+keywords = ["file", "cli", "encoding", "clipboard", "utf8"]
+categories = ["command-line-utilities", "encoding"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+encoding_rs = "0.8"
+chardetng = "0.1"
+infer = "0.15"
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"  # YAML解析验证
+toml = "0.8"
+quick-xml = "0.35"  # XML解析验证
+open = "5.0"
+thiserror = "1"
+ctrlc = "3.4"
+image = { version = "0.24", default-features = false, features = ["png", "jpeg", "bmp", "gif", "ico", "webp"] }
+file-identify = "0.4"
+crossterm = "0.28"  # 跨平台终端事件检测（ESC/Enter 按键）
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+arboard = "3.2"
+
+[target.'cfg(windows)'.dependencies]
+colored = "2.1"
+
+[target.'cfg(not(windows))'.dependencies]
+colored = "2.1"
+
+[dev-dependencies]
+tempfile = "3.10"
+assert_cmd = "2.0"
+predicates = "3.1"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "mf_benchmarks"
+harness = false
+
