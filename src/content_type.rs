@@ -407,9 +407,9 @@ fn detect_structured_formats(trimmed: &str, content: &str) -> Option<DetectionRe
                         vec!["yaml_validated_by_parser"],
                     ));
                 }
-                Err(e) => {
+                Err(_e) => {
                     #[cfg(test)]
-                    eprintln!("[YAML DEBUG] serde_yaml(from_str)解析失败: {:?}", e);
+                    eprintln!("[YAML DEBUG] serde_yaml(from_str)解析失败: {:?}", _e);
                     
                     // 检查是否是YAML多文档（通过手动检测---分隔符）
                     // YAML多文档格式：文档1内容---文档2内容---...
