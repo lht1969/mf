@@ -9,7 +9,9 @@ pub struct ClipboardImage {
 pub trait ClipboardProvider {
     fn read_text(&self) -> Result<String, MfError>;
     fn read_image(&self) -> Result<ClipboardImage, MfError>;
+    #[allow(dead_code)]
     fn is_empty(&self) -> Result<bool, MfError>;
+    #[allow(dead_code)]
     fn clear(&self) -> Result<(), MfError>;
 }
 

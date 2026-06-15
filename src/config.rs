@@ -15,6 +15,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct CoreConfig {
     #[serde(default = "default_encoding")]
     pub default_encoding: String,
@@ -37,6 +38,7 @@ pub struct EncodingConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct MatchingConfig {
     #[serde(default = "default_true")]
     pub warn_on_mismatch: bool,
@@ -47,6 +49,7 @@ pub struct MatchingConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct BehaviourConfig {
     #[serde(default = "default_ask")]
     pub default_on_conflict: String,

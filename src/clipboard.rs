@@ -30,10 +30,12 @@ impl Clipboard {
         })
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> Result<bool, MfError> {
         self.provider.is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn clear(&self) -> Result<(), MfError> {
         self.provider.clear()
     }

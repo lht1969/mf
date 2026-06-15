@@ -2,6 +2,7 @@ use crate::error::MfError;
 use encoding_rs::{Encoding, GBK, UTF_16BE, UTF_16LE, UTF_8};
 use std::path::Path;
 
+#[allow(dead_code)]
 pub fn choose_encoding(filename: &Path) -> &'static str {
     match filename.extension().and_then(|ext| ext.to_str()) {
         Some("bat") | Some("cmd") => "gbk",
@@ -63,6 +64,7 @@ pub fn detect_from_bytes(data: &[u8]) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 pub fn convert_bytes_to(data: &[u8], to_enc: &str) -> Result<Vec<u8>, MfError> {
     let decoded = decode_to_string(data)?;
     encode_string(&decoded, to_enc)

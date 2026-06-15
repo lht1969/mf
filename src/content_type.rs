@@ -1021,6 +1021,7 @@ pub fn check_match(content_type: &ContentType, filename: &Path) -> Result<(), Mf
 }
 
 /// Return the best suggested extension for the detected content type.
+#[allow(dead_code)]
 pub fn suggest_extension(content_type: &ContentType) -> Option<&'static str> {
     content_type.suggested_extensions().first().copied()
 }
