@@ -81,7 +81,10 @@ jobs:
             asset_name="$(basename "$dir")"
             for file in "$dir"*; do
               [ -f "$file" ] || continue
-              mv "$file" "artifacts/$asset_name"
+              # 用临时文件名中转，避免 mv 到已有目录名时移入而非替换
+              mv "$file" "artifacts/$asset_name.bin"
+              rmdir "$dir"
+              mv "artifacts/$asset_name.bin" "artifacts/$asset_name"
               gh release upload "${{ github.ref_name }}" "artifacts/$asset_name" --clobber
             done
           done
