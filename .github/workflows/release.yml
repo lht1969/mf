@@ -76,15 +76,19 @@ jobs:
               --generate-notes \
               --latest
 
-          # 遍历每个 artifact 子目录，重命名文件为 asset_name 再上传
+          # 排查：打印 artifacts 目录结构
+          echo "=== artifacts directory structure ==="
+          find artifacts -type f -o -type d | head -50
+          echo "=== end ==="
+
+          # 将产物重命名并移到扁平目录，再批量上传
+          mkdir -p renamed
           for dir in artifacts/*/; do
             asset_name="$(basename "$dir")"
             for file in "$dir"*; do
               [ -f "$file" ] || continue
-              # 用临时文件名中转，避免 mv 到已有目录名时移入而非替换
-              mv "$file" "artifacts/$asset_name.bin"
-              rmdir "$dir"
-              mv "artifacts/$asset_name.bin" "artifacts/$asset_name"
-              gh release upload "${{ github.ref_name }}" "artifacts/$asset_name" --clobber
+              mv "$file" "renamed/$asset_name"
             done
           done
+          rm -rf artifacts
+          gh release upload "${{ github.ref_name }}" renamed/* --clobber
