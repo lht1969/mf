@@ -44,6 +44,10 @@ jobs:
     needs: build
     runs-on: ubuntu-22.04
 
+    # 授予写入权限以允许创建 GitHub Release
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v4
 
