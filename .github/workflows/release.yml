@@ -22,7 +22,7 @@ jobs:
             binary_name: mf
             asset_name: mf-aarch64-apple-darwin
 
-    fail-fast: false
+      fail-fast: false
 
     runs-on: ${{ matrix.os }}
 
