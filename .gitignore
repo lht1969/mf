@@ -13,3 +13,5 @@
 *.pdb
 test*.*
 .trae/
+artifacts/
+renamed/
