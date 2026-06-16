@@ -15,12 +15,15 @@ jobs:
           - os: windows-2022
             binary_name: mf.exe
             asset_name: mf-x86_64-pc-windows-msvc.exe
+            target: ''
           - os: ubuntu-22.04
             binary_name: mf
             asset_name: mf-x86_64-unknown-linux-musl
+            target: x86_64-unknown-linux-musl
           - os: macos-14
             binary_name: mf
             asset_name: mf-aarch64-apple-darwin
+            target: ''
 
       fail-fast: false
 
@@ -33,14 +36,18 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install cross-compilation target
+        if: matrix.target != ''
+        run: rustup target add ${{ matrix.target }}
+
       - name: Build release
-        run: cargo build --release
+        run: cargo build --release ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }}
 
       - name: Upload binary as artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: target/release/${{ matrix.binary_name }}
+          path: ${{ matrix.target != '' && format('target/{0}/release/', matrix.target) || 'target/release/' }}${{ matrix.binary_name }}
 
   create-release:
     needs: build
@@ -62,16 +69,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 先创建 Release（不含产物）
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --generate-notes
+          # 如果 Release 已存在则跳过创建（支持重跑）
+          gh release view "${{ github.ref_name }}" > /dev/null 2>&1 \
+            || gh release create "${{ github.ref_name }}" \
+              --title "${{ github.ref_name }}" \
+              --generate-notes \
+              --latest
 
-          # 遍历每个 artifact 子目录，用目录名(即 asset_name) 作为 label 前缀上传
+          # 遍历每个 artifact 子目录，重命名文件为 asset_name 再上传
           for dir in artifacts/*/; do
+            asset_name="$(basename "$dir")"
             for file in "$dir"*; do
               [ -f "$file" ] || continue
-              label="$(basename "$dir")/$(basename "$file")"
-              gh release upload "${{ github.ref_name }}" "$file" --label "$label"
+              mv "$file" "artifacts/$asset_name"
+              gh release upload "${{ github.ref_name }}" "artifacts/$asset_name" --clobber
             done
           done
