@@ -237,7 +237,6 @@ mod tests {
         let decoded = decode_to_string(&converted).unwrap();
         assert_eq!(decoded, original);
     }
-}
 
     #[test]
     fn test_chardetng_on_gbk_bytes() {
@@ -247,3 +246,4 @@ mod tests {
         assert!(!had_errors);
         assert_eq!(cow.as_ref(), "你哈\n");
     }
+}

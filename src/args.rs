@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn test_single_file_no_flags() {
-        let args = Args::try_parse_from(&["mf", "file.txt"]).unwrap();
+        let args = Args::try_parse_from(["mf", "file.txt"]).unwrap();
         assert_eq!(args.files, vec![PathBuf::from("file.txt")]);
         assert!(!args.from_clipboard);
         assert!(!args.append);
@@ -102,32 +102,32 @@ mod tests {
 
     #[test]
     fn test_from_clipboard_flag() {
-        let args = Args::try_parse_from(&["mf", "-c", "file.txt"]).unwrap();
+        let args = Args::try_parse_from(["mf", "-c", "file.txt"]).unwrap();
         assert!(args.from_clipboard);
     }
 
     #[test]
     fn test_append_flag() {
-        let args = Args::try_parse_from(&["mf", "-a", "file.txt"]).unwrap();
+        let args = Args::try_parse_from(["mf", "-a", "file.txt"]).unwrap();
         assert!(args.append);
     }
 
     #[test]
     fn test_from_clipboard_and_append_combined() {
-        let args = Args::try_parse_from(&["mf", "-c", "-a", "file.txt"]).unwrap();
+        let args = Args::try_parse_from(["mf", "-c", "-a", "file.txt"]).unwrap();
         assert!(args.from_clipboard);
         assert!(args.append);
     }
 
     #[test]
     fn test_force_and_no_clobber_conflict() {
-        let result = Args::try_parse_from(&["mf", "--force", "--no-clobber", "file.txt"]);
+        let result = Args::try_parse_from(["mf", "--force", "--no-clobber", "file.txt"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_multi_file_parsing() {
-        let args = Args::try_parse_from(&["mf", "a.txt", "b.txt", "c.txt"]).unwrap();
+        let args = Args::try_parse_from(["mf", "a.txt", "b.txt", "c.txt"]).unwrap();
         assert_eq!(
             args.files,
             vec![
@@ -140,43 +140,43 @@ mod tests {
 
     #[test]
     fn test_encoding_option() {
-        let args = Args::try_parse_from(&["mf", "--encoding", "gbk", "file.txt"]).unwrap();
+        let args = Args::try_parse_from(["mf", "--encoding", "gbk", "file.txt"]).unwrap();
         assert_eq!(args.encoding, Some("gbk".to_string()));
     }
 
     #[test]
     fn test_version_flag() {
-        let result = Args::try_parse_from(&["mf", "--version", "file.txt"]);
+        let result = Args::try_parse_from(["mf", "--version", "file.txt"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_conflict_overwrite() {
-        let args = Args::try_parse_from(&["mf", "--conflict", "overwrite", "file.txt"]).unwrap();
+        let args = Args::try_parse_from(["mf", "--conflict", "overwrite", "file.txt"]).unwrap();
         assert_eq!(args.conflict.as_deref(), Some("overwrite"));
     }
 
     #[test]
     fn test_conflict_skip() {
-        let args = Args::try_parse_from(&["mf", "--conflict", "skip", "file.txt"]).unwrap();
+        let args = Args::try_parse_from(["mf", "--conflict", "skip", "file.txt"]).unwrap();
         assert_eq!(args.conflict.as_deref(), Some("skip"));
     }
 
     #[test]
     fn test_conflict_append() {
-        let args = Args::try_parse_from(&["mf", "--conflict", "append", "file.txt"]).unwrap();
+        let args = Args::try_parse_from(["mf", "--conflict", "append", "file.txt"]).unwrap();
         assert_eq!(args.conflict.as_deref(), Some("append"));
     }
 
     #[test]
     fn test_conflict_rename() {
-        let args = Args::try_parse_from(&["mf", "--conflict", "rename", "file.txt"]).unwrap();
+        let args = Args::try_parse_from(["mf", "--conflict", "rename", "file.txt"]).unwrap();
         assert_eq!(args.conflict.as_deref(), Some("rename"));
     }
 
     #[test]
     fn test_conflict_invalid_value() {
-        let result = Args::try_parse_from(&["mf", "--conflict", "invalid", "file.txt"]);
+        let result = Args::try_parse_from(["mf", "--conflict", "invalid", "file.txt"]);
         assert!(result.is_err());
     }
 }

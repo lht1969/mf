@@ -54,6 +54,7 @@ mod tests {
 
     #[test]
     #[cfg_attr(target_os = "linux", ignore)]
+    #[cfg(not(target_os = "linux"))]
     fn test_clipboard_roundtrip() {
         use arboard::Clipboard as ArboardClipboard;
 

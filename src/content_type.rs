@@ -249,10 +249,10 @@ fn detect_structured_formats(trimmed: &str, content: &str) -> Option<DetectionRe
     let first_char = trimmed.chars().next()?;
 
     // JSON检测 - 使用严格的语法验证
-    if first_char == '{' || first_char == '[' {
-        if serde_json::from_str::<serde_json::Value>(trimmed).is_ok() {
-            return Some(DetectionResult::new(ContentType::Json, 0.9, vec!["json_syntax_validated"]));
-        }
+    if (first_char == '{' || first_char == '[')
+        && serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
+    {
+        return Some(DetectionResult::new(ContentType::Json, 0.9, vec!["json_syntax_validated"]));
     }
 
     // XML / HTML检测 - 增强HTML片段识别 + 严格XML验证
@@ -428,6 +428,7 @@ fn detect_structured_formats(trimmed: &str, content: &str) -> Option<DetectionRe
             }
         } else {
             // 没有YAML结构特征，这是伪YAML（如日志），直接返回PlainText
+            #[cfg(test)]
             eprintln!("[YAML DEBUG] 没有YAML结构特征，返回PlainText");
             return Some(DetectionResult::new(
                 ContentType::PlainText,
@@ -441,13 +442,11 @@ fn detect_structured_formats(trimmed: &str, content: &str) -> Option<DetectionRe
     if first_char == '[' && !trimmed.starts_with('{') {
         let has_keyval = trimmed.contains('=');
         let has_section = trimmed.contains('[') && trimmed.contains(']');
-        if has_keyval && has_section {
-            match toml::from_str::<toml::Table>(trimmed) {
-                Ok(_) => {
-                    return Some(DetectionResult::new(ContentType::Toml, 0.88, vec!["toml_validated"]));
-                }
-                Err(_) => {}
-            }
+        if has_keyval
+            && has_section
+            && toml::from_str::<toml::Table>(trimmed).is_ok()
+        {
+            return Some(DetectionResult::new(ContentType::Toml, 0.88, vec!["toml_validated"]));
         }
     }
 
@@ -937,7 +936,7 @@ fn detect_markdown_enhanced(content: &str, _trimmed: &str) -> Option<DetectionRe
     }).count();
 
     // 要求至少2个Markdown信号以减少误判（从代码注释等）
-    let signal_count = vec![md_fence, md_link, md_bold, md_hr, md_list].iter().filter(|&x| *x).count();
+    let signal_count = [md_fence, md_link, md_bold, md_hr, md_list].iter().filter(|&x| *x).count();
 
     if signal_count >= 1 // 降低要求：单个强信号（如标题）也可触发
         || (md_heading && (md_bold || md_hr || md_list || md_fence || md_link))

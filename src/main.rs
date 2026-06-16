@@ -476,7 +476,7 @@ mod tests {
         let src = dir.path().join("source.txt");
         fs::write(&src, "hello from file").unwrap();
 
-        let args = Args::parse_from(&["mf", "out.txt", "--from-file", src.to_str().unwrap()]);
+        let args = Args::parse_from(["mf", "out.txt", "--from-file", src.to_str().unwrap()]);
         let content = get_content(&args).unwrap();
         assert_eq!(content, Some("hello from file".to_string()));
     }
@@ -487,21 +487,21 @@ mod tests {
         let src = dir.path().join("source.txt");
         fs::write(&src, "hello").unwrap();
 
-        let args = Args::parse_from(&["mf", "out.txt", "--from-file", src.to_str().unwrap(), "--detect-encoding"]);
+        let args = Args::parse_from(["mf", "out.txt", "--from-file", src.to_str().unwrap(), "--detect-encoding"]);
         let content = get_content(&args).unwrap();
         assert_eq!(content, Some("hello".to_string()));
     }
 
     #[test]
     fn test_get_content_empty_when_no_source() {
-        let args = Args::parse_from(&["mf", "test.txt"]);
+        let args = Args::parse_from(["mf", "test.txt"]);
         let content = get_content(&args).unwrap();
         assert!(content.is_none());
     }
 
     #[test]
     fn test_get_content_from_clipboard_flag_no_clipboard() {
-        let result = Args::try_parse_from(&["mf", "f.txt", "-c"]);
+        let result = Args::try_parse_from(["mf", "f.txt", "-c"]);
         assert!(result.is_ok());
     }
 
