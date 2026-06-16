@@ -60,7 +60,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # 先创建 Release（不含产物）
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
-            --generate-notes \
-            artifacts/*/*
+            --generate-notes
+
+          # 逐个上传构建产物（避免 glob 匹配问题）
+          find artifacts -type f -exec gh release upload "${{ github.ref_name }}" {} \;
