@@ -3,26 +3,26 @@ use std::path::PathBuf;
 
 #[derive(thiserror::Error, Debug)]
 pub enum MfError {
-    #[error("参数错误: {0}")]
+    #[error("提示: {0}")]
     InvalidArgument(String),
 
-    #[error("文件系统错误: {reason} (路径: {path})")]
+    #[error("文件访问遇到问题: {reason} (路径: {path})")]
     FileSystem {
         reason: String,
         path: PathBuf,
         source: Option<io::Error>,
     },
 
-    #[error("剪切板错误: {0}")]
+    #[error("剪贴板操作未完成: {0}")]
     Clipboard(String),
 
-    #[error("编码错误: {0}")]
+    #[error("编码处理遇到问题: {0}")]
     Encoding(String),
 
-    #[error("用户取消操作")]
+    #[error("操作已取消")]
     UserCancelled,
 
-    #[error("内部错误: {0}")]
+    #[error("程序内部异常: {0}")]
     Internal(String),
 }
 
@@ -94,12 +94,12 @@ mod tests {
         let err = MfError::InvalidArgument("missing flag".into());
         let msg = err.format_error();
         assert!(msg.contains("❌"));
-        assert!(msg.contains("参数错误"));
+        assert!(msg.contains("提示"));
 
         let err = MfError::UserCancelled;
         let msg = err.format_error();
         assert!(msg.contains("❌"));
-        assert!(msg.contains("用户取消"));
+        assert!(msg.contains("操作已取消"));
     }
 
     #[test]
@@ -107,7 +107,7 @@ mod tests {
         let err = MfError::Internal("deprecated".into());
         let msg = err.format_warning();
         assert!(msg.contains("⚠️"));
-        assert!(msg.contains("内部错误"));
+        assert!(msg.contains("程序内部异常"));
     }
 
     #[test]

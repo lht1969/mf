@@ -186,42 +186,55 @@ fn process_file(args: &Args, config: &Config, filename: &Path) -> Result<(), MfE
             }
             if let Err(e) = content_type::check_match(&ct, filename) {
                 if !args.force && args.conflict.is_none() {
-                    ui::warn(&format!("{}", e));
+                    // 使用 info 而非 warn，避免给用户造成"出错"的印象
+                    ui::info(&format!("{}", e));
                     let suggested_ext = ct.suggested_extensions().first().copied().unwrap_or("");
 
+                    // 友好提示：检测到内容类型与扩展名不同，以建议而非警告的方式引导用户确认
                     let choices: &[(&str, &str)] = if !suggested_ext.is_empty() {
                         &[
-                            ("继续保存", "使用原扩展名"),
-                            ("自动修正", &format!("改为 .{}", suggested_ext)),
+                            ("继续保存", "保持原扩展名不变"),
+                            ("采用建议", &format!("改为 .{} (推荐)", suggested_ext)),
                             ("查看内容", "预览前 100 字符"),
                             ("取消", "放弃操作"),
                         ]
                     } else {
                         &[
-                            ("继续保存", "使用原扩展名"),
+                            ("继续保存", "保持原扩展名不变"),
                             ("查看内容", "预览前 100 字符"),
                             ("取消", "放弃操作"),
                         ]
                     };
-                    // 默认选择"取消"（最后一个选项）
-                    let default_cancel = choices.len() - 1;
-                    let choice = ui::choose("内容与扩展名不匹配，请选择:", choices, Some(default_cancel));
+                    // 默认选择"继续保存"（第一个选项），因为扩展名不一定有误
+                    let default_keep = 0;
+                    let choice = ui::choose(
+                        &format!(
+                            "检测到内容类型为 {}，当前文件扩展名为 .{}。是否需要调整？",
+                            ct.name(),
+                            filename
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .unwrap_or("unknown")
+                        ),
+                        choices,
+                        Some(default_keep),
+                    );
 
                     let preview_idx = if suggested_ext.is_empty() { 1 } else { 2 };
                     match choice {
                         Some(0) => {}
                         Some(1) if !suggested_ext.is_empty() => {
                             if let Some(new_path) = auto_correct_extension(filename, &ct) {
-                                ui::info(&format!("自动修正扩展名: .{}", suggested_ext));
+                                ui::info(&format!("已将扩展名调整为 .{}", suggested_ext));
                                 return process_file(args, config, &new_path);
                             }
                         }
                         Some(n) if n == preview_idx => {
                             ui::info(&ui::preview(text, 100));
                             let retry = ui::choose(
-                                "请选择:",
-                                &[("继续保存", "使用原扩展名"), ("取消", "放弃操作")],
-                                Some(1), // 默认选择"取消"
+                                "确认文件类型后请选择：",
+                                &[("继续保存", "保持原扩展名不变"), ("取消", "放弃操作")],
+                                Some(0), // 默认选择"继续保存"
                             );
                             if retry != Some(0) {
                                 return Err(MfError::UserCancelled);
