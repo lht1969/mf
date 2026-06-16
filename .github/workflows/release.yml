@@ -22,6 +22,8 @@ jobs:
             binary_name: mf
             asset_name: mf-aarch64-apple-darwin
 
+    fail-fast: false
+
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -65,5 +67,11 @@ jobs:
             --title "${{ github.ref_name }}" \
             --generate-notes
 
-          # 逐个上传构建产物（避免 glob 匹配问题）
-          find artifacts -type f -exec gh release upload "${{ github.ref_name }}" {} \;
+          # 遍历每个 artifact 子目录，用目录名(即 asset_name) 作为 label 前缀上传
+          for dir in artifacts/*/; do
+            for file in "$dir"*; do
+              [ -f "$file" ] || continue
+              label="$(basename "$dir")/$(basename "$file")"
+              gh release upload "${{ github.ref_name }}" "$file" --label "$label"
+            done
+          done
