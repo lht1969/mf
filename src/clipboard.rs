@@ -5,12 +5,6 @@ pub struct Clipboard {
     provider: Box<dyn platform::ClipboardProvider>,
 }
 
-pub struct ClipboardImage {
-    pub width: usize,
-    pub height: usize,
-    pub data: Vec<u8>,
-}
-
 impl Clipboard {
     pub fn new() -> Result<Self, MfError> {
         Ok(Clipboard {
@@ -22,12 +16,8 @@ impl Clipboard {
         self.provider.read_text()
     }
 
-    pub fn read_image(&self) -> Result<ClipboardImage, MfError> {
-        self.provider.read_image().map(|img| ClipboardImage {
-            width: img.width,
-            height: img.height,
-            data: img.data,
-        })
+    pub fn read_image(&self) -> Result<platform::ClipboardImage, MfError> {
+        self.provider.read_image()
     }
 
     #[allow(dead_code)]
@@ -73,10 +63,8 @@ mod tests {
 
     #[test]
     #[cfg_attr(target_os = "linux", ignore)]
-    fn test_clipboard_clear() {
+    fn test_clipboard_clear_does_not_panic() {
         let clip = Clipboard::new().expect("Failed to create clipboard");
-        // Clear should not panic or error
-        let result = clip.clear();
-        assert!(result.is_ok() || result.is_err());
+        let _ = clip.clear(); // 仅验证不 panic
     }
 }

@@ -1,15 +1,5 @@
 use crate::error::MfError;
 use encoding_rs::{Encoding, GBK, UTF_16BE, UTF_16LE, UTF_8};
-use std::path::Path;
-
-#[allow(dead_code)]
-pub fn choose_encoding(filename: &Path) -> &'static str {
-    match filename.extension().and_then(|ext| ext.to_str()) {
-        Some("bat") | Some("cmd") => "gbk",
-        Some("ps1") => "utf8bom",
-        _ => "utf8",
-    }
-}
 
 fn resolve_encoding(name: &str) -> Result<&'static Encoding, MfError> {
     match name {
@@ -86,25 +76,6 @@ pub fn decode_to_string(data: &[u8]) -> Result<String, MfError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
-
-    #[test]
-    fn test_choose_encoding_bat() {
-        assert_eq!(choose_encoding(Path::new("script.bat")), "gbk");
-        assert_eq!(choose_encoding(Path::new("install.cmd")), "gbk");
-    }
-
-    #[test]
-    fn test_choose_encoding_ps1() {
-        assert_eq!(choose_encoding(Path::new("deploy.ps1")), "utf8bom");
-    }
-
-    #[test]
-    fn test_choose_encoding_other() {
-        assert_eq!(choose_encoding(Path::new("readme.txt")), "utf8");
-        assert_eq!(choose_encoding(Path::new("main.rs")), "utf8");
-        assert_eq!(choose_encoding(Path::new("config.json")), "utf8");
-    }
 
     #[test]
     fn test_encode_utf8() {

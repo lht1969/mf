@@ -10,7 +10,7 @@ use std::path::PathBuf;
 )]
 pub struct Args {
     /// 要创建的文件路径（支持同时指定多个文件）
-    #[arg(required_unless_present_any = ["help_encoding", "examples", "help_config"])]
+    #[arg(required_unless_present_any = ["help_encoding", "examples", "help_config", "preview"])]
     pub files: Vec<PathBuf>,
 
     /// 从剪贴板读取内容写入文件（适用于截图后保存图片或复制文本后创建文件）
@@ -84,6 +84,10 @@ pub struct Args {
     /// 限制允许创建的文件最大大小（单位：MB），超出则拒绝创建
     #[arg(long = "max-size")]
     pub max_size: Option<u64>,
+
+    /// 预览剪贴板内容：检测格式类型并显示详细信息（无需指定文件路径）
+    #[arg(short = 'p', long = "preview")]
+    pub preview: bool,
 }
 
 #[cfg(test)]

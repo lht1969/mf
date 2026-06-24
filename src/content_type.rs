@@ -1,3 +1,10 @@
+// 评分约定:
+//   - 信号权重: 0.08~0.35 (单一信号匹配得分)
+//   - 类型基础分: 0.50~0.65 (匹配到至少一个信号后的保底分)
+//   - 类型置信度上限: 0.88~0.95 (避免满分)
+//   - 最终置信度 = 基础分 + ∑信号权重，取上限 min()
+//   - 竞争类型通过 "基础分 + 额外判断" 拉开差距 (如 C vs C++, Python vs Ruby)
+
 use std::path::Path;
 
 use crate::error::MfError;
@@ -1106,6 +1113,79 @@ pub fn detect_enhanced(content: &str, _filename: Option<&Path>) -> ContentType {
     heuristic
 }
 
+/// 预览检测结果：包含内容类型、置信度及建议扩展名（用于 --preview 功能）
+#[derive(Debug, Clone)]
+pub struct PreviewResult {
+    /// 检测到的内容类型
+    pub content_type: ContentType,
+    /// 置信度评分 (0.0 - 1.0)
+    pub confidence: f64,
+    /// 建议的文件扩展名列表
+    pub suggested_extensions: Vec<&'static str>,
+}
+
+/// 检测所有可能的候选格式，按置信度从高到低排序返回
+///
+/// 与 `detect()` 只返回最高置信度的单个结果不同，
+/// 此函数返回完整的候选列表，便于预览功能展示多种可能性。
+///
+/// # 参数
+/// - `content`: 待检测的文本内容
+///
+/// # 返回值
+/// 按 confidence 降序排列的候选结果列表
+pub fn detect_all(content: &str) -> Vec<PreviewResult> {
+    let trimmed = content.trim();
+
+    // 快速路径：空内容
+    if trimmed.is_empty() {
+        return vec![PreviewResult {
+            content_type: ContentType::PlainText,
+            confidence: 1.0,
+            suggested_extensions: ContentType::PlainText.suggested_extensions(),
+        }];
+    }
+
+    // 收集所有候选
+    let candidates = collect_all_candidates(content, trimmed);
+
+    // 无候选时返回 PlainText
+    if candidates.is_empty() {
+        return vec![PreviewResult {
+            content_type: ContentType::PlainText,
+            confidence: 0.5,
+            suggested_extensions: ContentType::PlainText.suggested_extensions(),
+        }];
+    }
+
+    // 转换为 PreviewResult 并按置信度降序排序
+    let mut results: Vec<PreviewResult> = candidates
+        .into_iter()
+        .map(|c| {
+            let exts = c.content_type.suggested_extensions();
+            PreviewResult {
+                content_type: c.content_type,
+                confidence: c.confidence,
+                suggested_extensions: exts,
+            }
+        })
+        .collect();
+
+    results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+
+    results
+}
+
+impl Default for PreviewResult {
+    fn default() -> Self {
+        PreviewResult {
+            content_type: ContentType::PlainText,
+            confidence: 0.0,
+            suggested_extensions: vec![],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -1346,10 +1426,92 @@ $var = Get-Process
         // 不同类别的格式仍然应该警告
         let ct_json = ContentType::Json; // 建议 ["json"]
         let ct_xml = ContentType::Xml;   // 建议 ["xml"]
-        
+
         // JSON 检测结果配 .txt 扩展名 - 应该警告
         assert!(check_match(&ct_json, Path::new("test.txt")).is_err());
         // XML 检测结果配 .json 扩展名 - 应该警告
         assert!(check_match(&ct_xml, Path::new("data.json")).is_err());
+    }
+
+    // ========== detect_all() 函数的单元测试 ==========
+
+    #[test]
+    fn test_detect_all_json_single_result() {
+        // JSON 内容应返回以 JSON 为首的结果列表
+        let results = detect_all(r#"{"key": "value"}"#);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].content_type, ContentType::Json);
+        assert!(results[0].confidence > 0.7);
+        // 验证结果按置信度降序排列
+        for i in 1..results.len() {
+            assert!(results[i - 1].confidence >= results[i].confidence);
+        }
+    }
+
+    #[test]
+    fn test_detect_all_empty_content() {
+        // 空内容应返回单个 PlainText 结果，置信度为 1.0
+        let results = detect_all("");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].content_type, ContentType::PlainText);
+        assert!((results[0].confidence - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_detect_all_whitespace_only() {
+        // 仅含空白的内容应返回 PlainText
+        let results = detect_all("   \n\t  ");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].content_type, ContentType::PlainText);
+    }
+
+    #[test]
+    fn test_detect_all_multiple_candidates() {
+        // 复杂内容可能匹配多种格式（如 Markdown + PlainText）
+        let md_content = "# 标题\n\n- 列表项\n\n```python\nprint('hello')\n```";
+        let results = detect_all(md_content);
+        assert!(!results.is_empty());
+        // 验证每个结果都有建议扩展名
+        for r in &results {
+            assert!(
+                !r.suggested_extensions.is_empty() || r.content_type == ContentType::Binary,
+                "非 Binary 类型应有建议扩展名"
+            );
+        }
+    }
+
+    #[test]
+    fn test_detect_all_suggested_extensions_format() {
+        // 验证返回的建议扩展名格式正确
+        let results = detect_all("[1, 2, 3]");
+        assert!(!results.is_empty());
+        let first = &results[0];
+        // JSON 的建议扩展名应包含 "json"
+        if first.content_type == ContentType::Json {
+            assert!(first.suggested_extensions.contains(&"json"));
+        }
+    }
+
+    #[test]
+    fn test_detect_all_confidence_range() {
+        // 验证所有置信度都在 [0.0, 1.0] 范围内
+        let test_cases = vec![
+            r#"{"a": 1}"#,
+            "<html><body>test</body></html>",
+            "fn main() { println!(\"hello\"); }",
+            "just plain text here",
+            "",
+        ];
+        for content in &test_cases {
+            let results = detect_all(content);
+            for r in &results {
+                assert!(
+                    (0.0..=1.0).contains(&r.confidence),
+                    "置信度 {:.2} 超出 [0.0, 1.0] 范围，输入: {:?}",
+                    r.confidence,
+                    content
+                );
+            }
+        }
     }
 }

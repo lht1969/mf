@@ -1,13 +1,13 @@
 mod args;
 mod clipboard;
-mod conflict;
 mod config;
+mod conflict;
 mod content_type;
 mod encoding;
 mod error;
 mod file_ops;
-mod ui;
 mod platform;
+mod ui;
 
 use args::Args;
 use clap::Parser;
@@ -53,10 +53,15 @@ fn get_content(args: &Args) -> Result<Option<String>, MfError> {
             // PowerShell/cmd.exe pipes ANSI bytes (GBK on zh-CN, Shift_JIS on ja-JP…)
             // chardetng may not detect encoding reliably from very short input,
             // so try common Windows ANSI encodings in addition.
-            let candidates = [
-                encoding::detect_from_bytes(&buf),
+            let candidates = [encoding::detect_from_bytes(&buf)];
+            let fallbacks = [
+                "gbk",
+                "gb18030",
+                "shift_jis",
+                "euc-kr",
+                "big5",
+                "iso-2022-jp",
             ];
-            let fallbacks = ["gbk", "gb18030", "shift_jis", "euc-kr", "big5", "iso-2022-jp"];
 
             for label in candidates.iter().chain(fallbacks.iter()) {
                 if let Some(enc) = encoding_rs::Encoding::for_label(label.as_bytes()) {
@@ -104,7 +109,10 @@ fn get_content(args: &Args) -> Result<Option<String>, MfError> {
     Ok(None)
 }
 
-fn auto_correct_extension(path: &Path, content_type: &content_type::ContentType) -> Option<PathBuf> {
+fn auto_correct_extension(
+    path: &Path,
+    content_type: &content_type::ContentType,
+) -> Option<PathBuf> {
     let suggested = content_type.suggested_extensions();
     if suggested.is_empty() {
         return None;
@@ -126,14 +134,12 @@ fn resolve_encoding(filename: &Path, config: &Config) -> String {
     match ext.as_deref() {
         Some("bat") | Some("cmd") => config.encodings.bat.clone(),
         Some("ps1") => config.encodings.ps1.clone(),
-        Some(ext) => {
-            config
-                .encodings
-                .custom
-                .get(ext)
-                .cloned()
-                .unwrap_or_else(|| config.core.default_encoding.clone())
-        }
+        Some(ext) => config
+            .encodings
+            .custom
+            .get(ext)
+            .cloned()
+            .unwrap_or_else(|| config.core.default_encoding.clone()),
         None => config.core.default_encoding.clone(),
     }
 }
@@ -157,6 +163,16 @@ fn resolve_conflict_mode(args: &Args) -> ConflictMode {
 }
 
 fn process_file(args: &Args, config: &Config, filename: &Path) -> Result<(), MfError> {
+    let mut path = filename.to_path_buf();
+    loop {
+        match try_process_file(args, config, &path)? {
+            Some(next) => path = next,
+            None => return Ok(()),
+        }
+    }
+}
+
+fn try_process_file(args: &Args, config: &Config, filename: &Path) -> Result<Option<PathBuf>, MfError> {
     file_ops::validate_path(filename)?;
 
     let content = get_content(args)?;
@@ -226,7 +242,7 @@ fn process_file(args: &Args, config: &Config, filename: &Path) -> Result<(), MfE
                         Some(1) if !suggested_ext.is_empty() => {
                             if let Some(new_path) = auto_correct_extension(filename, &ct) {
                                 ui::info(&format!("已将扩展名调整为 .{}", suggested_ext));
-                                return process_file(args, config, &new_path);
+                                return Ok(Some(new_path));
                             }
                         }
                         Some(n) if n == preview_idx => {
@@ -255,7 +271,7 @@ fn process_file(args: &Args, config: &Config, filename: &Path) -> Result<(), MfE
                 if args.verbose || !args.quiet {
                     ui::verbose(&format!("跳过已存在文件: {}", filename.display()), true);
                 }
-                return Ok(());
+                return Ok(None);
             }
             ConflictAction::Append => {
                 if let Some(ref text) = content {
@@ -263,15 +279,19 @@ fn process_file(args: &Args, config: &Config, filename: &Path) -> Result<(), MfE
                 }
                 if !args.quiet {
                     if args.verbose {
-                        ui::success(&format!("追加 {}  (编码: {})", filename.display(), encoding));
+                        ui::success(&format!(
+                            "追加 {}  (编码: {})",
+                            filename.display(),
+                            encoding
+                        ));
                     } else {
                         ui::success(&format!("✓ {} (追加)", filename.display()));
                     }
                 }
-                return Ok(());
+                return Ok(None);
             }
             ConflictAction::Rename(new_path) => {
-                return process_file(args, config, &new_path);
+                return Ok(Some(new_path));
             }
             ConflictAction::Overwrite => {}
         }
@@ -333,8 +353,7 @@ fn process_file(args: &Args, config: &Config, filename: &Path) -> Result<(), MfE
                     ui::success(&format!("✓ {} (图片)", filename.display()));
                 }
             }
-            // 图片已处理完毕，直接返回，避免重复输出
-            return Ok(());
+            return Ok(None);
         }
         None => {
             file_ops::create_empty(filename)?;
@@ -347,14 +366,23 @@ fn process_file(args: &Args, config: &Config, filename: &Path) -> Result<(), MfE
 
     if !args.quiet {
         if args.verbose {
-            let action = if content.is_some() { "写入" } else { "创建" };
-            ui::success(&format!("{} {}  (编码: {})", action, filename.display(), encoding));
+            let action = if content.is_some() {
+                "写入"
+            } else {
+                "创建"
+            };
+            ui::success(&format!(
+                "{} {}  (编码: {})",
+                action,
+                filename.display(),
+                encoding
+            ));
         } else {
             ui::success(&format!("✓ {}", filename.display()));
         }
     }
 
-    Ok(())
+    Ok(None)
 }
 
 fn print_encoding_help() {
@@ -446,6 +474,52 @@ fn setup_signal_handler() {
     }
 }
 
+/// 执行剪贴板预览功能
+///
+/// 从系统剪贴板读取文本内容，检测其格式类型，
+/// 并以列表形式展示检测结果和内容预览。
+fn run_preview(args: &Args) -> Result<(), MfError> {
+    // 获取剪贴板内容
+    let cb = clipboard::Clipboard::new()?;
+
+    // 尝试读取文本内容
+    let content = match cb.read_text() {
+        Ok(text) => text,
+        Err(_) => {
+            // 文本读取失败，检查是否为图片
+            match cb.read_image() {
+                Ok(_) => {
+                    return Err(MfError::InvalidArgument(
+                        "剪贴板中仅包含图片数据，暂不支持图片预览。可使用 -c 参数保存图片到文件。"
+                            .into(),
+                    ));
+                }
+                Err(_) => {
+                    return Err(MfError::Clipboard(
+                        "无法读取剪贴板内容，请确认已复制文本或数据".into(),
+                    ));
+                }
+            }
+        }
+    };
+
+    // 检查内容是否为空
+    if content.trim().is_empty() {
+        return Err(MfError::InvalidArgument(
+            "剪贴板内容为空，请先复制一些文本或代码后再试。".into(),
+        ));
+    }
+
+    // 执行内容类型检测（获取所有候选结果）
+    let results = content_type::detect_all(&content);
+
+    // 显示预览报告（列表形式）
+    let preview_chars: usize = 200; // 默认预览前 200 个字符
+    ui::preview_report(&content, &results, preview_chars, args.verbose);
+
+    Ok(())
+}
+
 fn main() {
     setup_signal_handler();
     let config = config::Config::load();
@@ -467,6 +541,17 @@ fn main() {
         _ => {}
     }
 
+    // 预览模式：检测剪贴板内容并展示格式信息，不创建文件
+    if args.preview {
+        if let Err(e) = run_preview(&args) {
+            if !args.quiet || matches!(&e, MfError::UserCancelled) {
+                eprintln!("{}", e);
+            }
+            std::process::exit(e.exit_code() as i32);
+        }
+        return;
+    }
+
     for file in &args.files {
         if let Err(e) = process_file(&args, &config, file) {
             if !args.quiet || matches!(&e, MfError::UserCancelled) {
@@ -480,8 +565,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_get_content_from_file() {
@@ -500,7 +585,13 @@ mod tests {
         let src = dir.path().join("source.txt");
         fs::write(&src, "hello").unwrap();
 
-        let args = Args::parse_from(["mf", "out.txt", "--from-file", src.to_str().unwrap(), "--detect-encoding"]);
+        let args = Args::parse_from([
+            "mf",
+            "out.txt",
+            "--from-file",
+            src.to_str().unwrap(),
+            "--detect-encoding",
+        ]);
         let content = get_content(&args).unwrap();
         assert_eq!(content, Some("hello".to_string()));
     }

@@ -48,6 +48,94 @@ pub fn preview(content: &str, max_chars: usize) -> String {
     }
 }
 
+/// 生成剪贴板预览报告（用于 --preview 功能）
+///
+/// # 参数
+/// - `content`: 剪贴板文本内容
+/// - `results`: 内容类型检测结果列表（按置信度降序）
+/// - `max_preview_chars`: 内容预览最大字符数
+/// - `verbose`: 是否显示详细模式（包含匹配信号等信息）
+///
+/// # 返回值
+/// 格式化后的完整预览报告字符串
+pub fn preview_report(content: &str, results: &[crate::content_type::PreviewResult], max_preview_chars: usize, verbose: bool) {
+    use colored::*;
+
+    // 报告标题
+    println!("{}", "剪贴板内容预览".cyan().bold());
+    println!("{}", "═".repeat(40).cyan());
+
+    // 基本信息
+    let char_count = content.chars().count();
+    let byte_count = content.len();
+    println!("内容长度: {} 字符 ({} 字节)", char_count, byte_count);
+
+    // 编码检测提示
+    if !content.is_ascii() {
+        println!("{}", "编码检测: 可能包含非 ASCII 字符".dimmed());
+    }
+
+    println!();
+
+    // 检测结果列表
+    println!("{}", "检测结果 (按置信度排序):".bold());
+    for (i, r) in results.iter().enumerate() {
+        // 格式化扩展名为点分隔的字符串
+        let ext_str: String = r.suggested_extensions
+            .iter()
+            .map(|e| format!(".{}", e))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        // 置信度颜色：高(绿) / 中(黄) / 低(红/暗)
+        let conf_color = if r.confidence >= 0.7 {
+            "green"
+        } else if r.confidence >= 0.3 {
+            "yellow"
+        } else {
+            "dimmed"
+        };
+
+        println!(
+            "  {}. {:<12} 置信度: {:<6} 建议扩展名: {}",
+            i + 1,
+            r.content_type.name(),
+            match conf_color {
+                "green" => format!("{:.2}", r.confidence).green().to_string(),
+                "yellow" => format!("{:.2}", r.confidence).yellow().to_string(),
+                _ => format!("{:.2}", r.confidence).dimmed().to_string(),
+            },
+            if ext_str.is_empty() { "(无)".dimmed().to_string() } else { ext_str },
+        );
+    }
+
+    println!();
+
+    // 内容预览区域
+    println!("{}", "内容预览:".bold());
+    let preview_text = preview(content, max_preview_chars);
+    // 缩进显示预览内容，每行前加两个空格
+    for line in preview_text.lines() {
+        println!("  {}", line);
+    }
+
+    // 详细模式：显示额外信息
+    if verbose && !results.is_empty() {
+        println!();
+        println!("{}", "最佳匹配:".bold().green());
+        let best = &results[0];
+        println!(
+            "  类型: {} | 置信度: {:.2} | 建议: {}",
+            best.content_type.name().green(),
+            best.confidence,
+            best.suggested_extensions.iter()
+                .map(|e| format!(".{}", e))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+}
+
 /// 用户选择函数（支持 ESC 取消、Enter 确认默认值）
 ///
 /// # 参数

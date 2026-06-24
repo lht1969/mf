@@ -128,7 +128,7 @@ impl Default for BehaviourConfig {
 // ---------- loading logic ----------
 
 impl Config {
-    /// Load config with 3-tier priority: project > user > default
+    /// 加载配置，优先级：项目配置 > 用户配置 > 默认配置
     pub fn load() -> Config {
         let mut config = Config::default();
 

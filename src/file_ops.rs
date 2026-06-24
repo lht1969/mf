@@ -7,21 +7,21 @@ use std::sync::Mutex;
 
 static TEMP_FILES: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
-/// Register a temp file path for cleanup on signal
+/// 注册临时文件路径，用于信号处理时清理
 pub fn register_temp_file(path: PathBuf) {
     if let Ok(mut files) = TEMP_FILES.lock() {
         files.push(path);
     }
 }
 
-/// Unregister a temp file (called after successful rename)
+/// 取消注册临时文件（重命名成功后调用）
 pub fn unregister_temp_file(path: &Path) {
     if let Ok(mut files) = TEMP_FILES.lock() {
         files.retain(|p| p != path);
     }
 }
 
-/// Clean up all registered temp files (called on signal)
+/// 清理所有已注册的临时文件（信号处理时调用）
 pub fn cleanup_temp_files() {
     if let Ok(mut files) = TEMP_FILES.lock() {
         for path in files.drain(..) {
@@ -114,12 +114,13 @@ pub fn create_backup(path: &Path) -> Result<(), MfError> {
 }
 
 pub fn validate_path(path: &Path) -> Result<(), MfError> {
-    let path_str = path.to_string_lossy();
-    if path_str.contains("..") {
-        return Err(MfError::InvalidArgument(format!(
-            "Path '{}' contains '..' which is not allowed",
-            path_str
-        )));
+    for component in path.components() {
+        if component == std::path::Component::ParentDir {
+            return Err(MfError::InvalidArgument(format!(
+                "Path '{}' contains '..' which is not allowed",
+                path.display()
+            )));
+        }
     }
     Ok(())
 }

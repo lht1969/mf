@@ -49,23 +49,6 @@ impl From<io::Error> for MfError {
     }
 }
 
-#[allow(dead_code)]
-pub trait ErrorDisplay {
-    fn format_error(&self) -> String;
-    fn format_warning(&self) -> String;
-}
-
-#[allow(dead_code)]
-impl ErrorDisplay for MfError {
-    fn format_error(&self) -> String {
-        format!("❌ {}", self)
-    }
-
-    fn format_warning(&self) -> String {
-        format!("⚠️ {}", self)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,27 +70,6 @@ mod tests {
         assert_eq!(MfError::Encoding("test".into()).exit_code(), 4);
         assert_eq!(MfError::UserCancelled.exit_code(), 5);
         assert_eq!(MfError::Internal("test".into()).exit_code(), 127);
-    }
-
-    #[test]
-    fn test_error_format() {
-        let err = MfError::InvalidArgument("missing flag".into());
-        let msg = err.format_error();
-        assert!(msg.contains("❌"));
-        assert!(msg.contains("提示"));
-
-        let err = MfError::UserCancelled;
-        let msg = err.format_error();
-        assert!(msg.contains("❌"));
-        assert!(msg.contains("操作已取消"));
-    }
-
-    #[test]
-    fn test_warning_format() {
-        let err = MfError::Internal("deprecated".into());
-        let msg = err.format_warning();
-        assert!(msg.contains("⚠️"));
-        assert!(msg.contains("程序内部异常"));
     }
 
     #[test]
